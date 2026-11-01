@@ -43,7 +43,16 @@ system-metrics: Python agents publish stats every 5seconds, can be called using 
 ## Git Workflow
 local Feature branch PR into origin develop branch, Jenkins checks every 1 min for changes and performs CI. If succeed, push to jfrog.
 
-##Dashboard (AI created)
+## Dashboard (AI created)
 Displays both python agents as well as the Java API health.
 reach it at http://localhost:3000/
+
+## Project Extention (Adding CD Pipeline)
+Architect - 
+CD pipeline
+![Architecture diagram](docs/Pipeline-Flowchart.png)
+
+Data flow
+![Architecture diagram](docs/data-flowchart.png)
+
 
