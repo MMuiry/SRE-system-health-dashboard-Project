@@ -47,3 +47,11 @@ local Feature branch PR into origin develop branch, Jenkins checks every 1 min f
 Displays both python agents as well as the Java API health.
 reach it at http://localhost:3000/
 
+##Project Extention (Adding CD Pipeline)
+Architect - 
+CD pipeline
+![Architecture diagram](docs/Pipeline-Flowchart.png)
+Data flow
+![Architecture diagram](docs/data-flowchart.png)
+
+
