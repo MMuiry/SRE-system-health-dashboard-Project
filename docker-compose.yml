@@ -37,7 +37,7 @@ services:
   agent-1:
     build: ./agent
     ports:
-      - "5001:5000"
+      - "5101:5000"
     environment:
       MACHINE_NAME: machine-1
       KAFKA_BOOTSTRAP_SERVERS: kafka:19092
@@ -47,7 +47,7 @@ services:
   agent-2:
     build: ./agent
     ports:
-      - "5002:5000"
+      - "5102:5000"
     environment:
       MACHINE_NAME: machine-2
       KAFKA_BOOTSTRAP_SERVERS: kafka:19092
@@ -58,6 +58,6 @@ services:
   dashboard:
     build: ./dashboard
     ports:
-      - "3000:80"
+      - "8088:80"
     depends_on:
       - java-api
