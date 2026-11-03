@@ -17,7 +17,7 @@ for i in $(seq 1 30); do
   sleep 2
 done
 
-for path in /health /version /metrics; do
+for path in /health /version /metrics ${EXTRA_SMOKE_PATH:-}; do
   echo "Checking ${path}"
   curl -fsS "${BASE_URL}${path}" > /dev/null || { echo "FAIL: ${path}"; exit 1; }
 done
