@@ -1,3 +1,24 @@
+def onServer(String command) {
+    withCredentials([sshUserPrivateKey(credentialsId: 'aws-ssh', keyFileVariable: 'SSH_KEY', usernameVariable: 'SSH_USER')]) {
+        sh "ssh -i \"\$SSH_KEY\" -o StrictHostKeyChecking=accept-new \"\$SSH_USER@${env.DEPLOY_HOST}\" 'cd ~/${env.REPO_DIR} && ${command}'"
+    }
+}
+
+def jfrogLoginOnServer() {
+    withCredentials([
+        sshUserPrivateKey(credentialsId: 'aws-ssh', keyFileVariable: 'SSH_KEY', usernameVariable: 'SSH_USER'),
+        usernamePassword(credentialsId: 'jfrog-creds', usernameVariable: 'JF_USER', passwordVariable: 'JF_TOKEN')
+    ]) {
+        sh 'echo "$JF_TOKEN" | ssh -i "$SSH_KEY" -o StrictHostKeyChecking=accept-new "$SSH_USER@$DEPLOY_HOST" "docker login $JFROG_REGISTRY -u $JF_USER --password-stdin"'
+    }
+}
+
+def deployTo(String environmentName) {
+    jfrogLoginOnServer()
+    onServer("git fetch -q origin && git checkout -q --force ${env.GIT_COMMIT} && ./scripts/deploy.sh ${environmentName} ${env.IMAGE_TAG}")
+    env.DEPLOYED_TO = environmentName
+}
+
 pipeline {
     agent any
 
@@ -5,17 +26,20 @@ pipeline {
         IMAGE_NAME      = 'system-health-dashboard'
         AGENT_IMAGE     = 'system-agent'
         IMAGE_TAG       = "1.0.${BUILD_NUMBER}"
-        CONTAINER       = "shd-ci-${BUILD_NUMBER}"
-        AGENT_CONTAINER = "agent-ci-${BUILD_NUMBER}"
-        KAFKA_CONTAINER = "kafka-ci-${BUILD_NUMBER}"
-        CI_NETWORK      = "shd-ci-net-${BUILD_NUMBER}"
+        CI_ID           = "${env.BRANCH_NAME.replaceAll('[^A-Za-z0-9]', '-').toLowerCase()}-${env.BUILD_NUMBER}"
+        CONTAINER       = "shd-ci-${CI_ID}"
+        AGENT_CONTAINER = "agent-ci-${CI_ID}"
+        KAFKA_CONTAINER = "kafka-ci-${CI_ID}"
+        CI_NETWORK      = "shd-ci-net-${CI_ID}"
         JFROG_REGISTRY  = 'muirytest.jfrog.io'
         JFROG_REPO      = 'docker-local'
+        DEPLOY_HOST     = '16.170.218.243'
+        REPO_DIR        = 'SRE-system-health-dashboard'
     }
 
     options {
         timestamps()
-        timeout(time: 25, unit: 'MINUTES')
+        timeout(time: 60, unit: 'MINUTES')
     }
 
     stages {
@@ -127,8 +151,6 @@ pipeline {
             }
         }
 
-
-
         stage('Kafka check') {
             steps {
                 sh '''
@@ -150,7 +172,7 @@ pipeline {
             }
         }
 
-      stage('Machine metrics check') {
+        stage('Machine metrics check') {
             steps {
                 sh '''
                     for i in $(seq 1 30); do
@@ -170,30 +192,120 @@ pipeline {
             }
         }
 
-      stage('Publish to JFrog') {
-                  when {
-                      anyOf {
-                          branch 'develop'
-                          branch 'main'
-                      }
-                  }
-                  steps {
-                      withCredentials([usernamePassword(credentialsId: 'jfrog-creds',
-                                                        usernameVariable: 'JF_USER',
-                                                        passwordVariable: 'JF_TOKEN')]) {
-                          sh '''
-                              echo "$JF_TOKEN" | docker login ${JFROG_REGISTRY} -u "$JF_USER" --password-stdin
-                              docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${JFROG_REGISTRY}/${JFROG_REPO}/${IMAGE_NAME}:${IMAGE_TAG}
-                              docker push ${JFROG_REGISTRY}/${JFROG_REPO}/${IMAGE_NAME}:${IMAGE_TAG}
-                              docker tag ${AGENT_IMAGE}:${IMAGE_TAG} ${JFROG_REGISTRY}/${JFROG_REPO}/${AGENT_IMAGE}:${IMAGE_TAG}
-                              docker push ${JFROG_REGISTRY}/${JFROG_REPO}/${AGENT_IMAGE}:${IMAGE_TAG}
-                              docker logout ${JFROG_REGISTRY}
-                          '''
-                      }
-                  }
-              }
-          }
+        stage('Publish to JFrog') {
+            when {
+                anyOf {
+                    branch 'develop'
+                    branch 'main'
+                }
+            }
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'jfrog-creds',
+                                                  usernameVariable: 'JF_USER',
+                                                  passwordVariable: 'JF_TOKEN')]) {
+                    sh '''
+                        echo "$JF_TOKEN" | docker login ${JFROG_REGISTRY} -u "$JF_USER" --password-stdin
+                        docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${JFROG_REGISTRY}/${JFROG_REPO}/${IMAGE_NAME}:${IMAGE_TAG}
+                        docker push ${JFROG_REGISTRY}/${JFROG_REPO}/${IMAGE_NAME}:${IMAGE_TAG}
+                        docker tag ${AGENT_IMAGE}:${IMAGE_TAG} ${JFROG_REGISTRY}/${JFROG_REPO}/${AGENT_IMAGE}:${IMAGE_TAG}
+                        docker push ${JFROG_REGISTRY}/${JFROG_REPO}/${AGENT_IMAGE}:${IMAGE_TAG}
+                        docker logout ${JFROG_REGISTRY}
+                    '''
+                }
+            }
+        }
+
+        stage('Deploy to Staging') {
+            when {
+                anyOf {
+                    branch 'develop'
+                    branch 'main'
+                }
+            }
+            steps {
+                script {
+                    deployTo('staging')
+                }
+            }
+        }
+
+        stage('Smoke test (staging)') {
+            when {
+                anyOf {
+                    branch 'develop'
+                    branch 'main'
+                }
+            }
+            steps {
+                script {
+                    onServer("./scripts/smoke_test.sh 5001 ${env.IMAGE_TAG}")
+                }
+            }
+        }
+
+        stage('Verify monitoring') {
+            when {
+                anyOf {
+                    branch 'develop'
+                    branch 'main'
+                }
+            }
+            steps {
+                script {
+                    onServer('./scripts/verify_monitoring.sh staging')
+                }
+            }
+        }
+
+        stage('Approval') {
+            when {
+                branch 'main'
+            }
+            steps {
+                script {
+                    def approver = input(message: "Deploy ${env.IMAGE_TAG} to production?",
+                                         ok: 'Deploy to production',
+                                         submitterParameter: 'APPROVER')
+                    echo "Production release ${env.IMAGE_TAG} approved by ${approver}"
+                }
+            }
+        }
+
+        stage('Deploy to Production') {
+            when {
+                branch 'main'
+            }
+            steps {
+                script {
+                    deployTo('production')
+                }
+            }
+        }
+
+        stage('Smoke test (production)') {
+            when {
+                branch 'main'
+            }
+            steps {
+                script {
+                    onServer("./scripts/smoke_test.sh 5002 ${env.IMAGE_TAG}")
+                }
+            }
+        }
+    }
+
     post {
+        failure {
+            script {
+                if (env.DEPLOYED_TO) {
+                    echo "Deployment failed - rolling back ${env.DEPLOYED_TO} to its previous tag"
+                    jfrogLoginOnServer()
+                    onServer("./scripts/rollback.sh ${env.DEPLOYED_TO}")
+                } else {
+                    echo "Failed before any deployment - nothing to roll back"
+                }
+            }
+        }
         always {
             sh '''
                 docker rm -f ${CONTAINER} ${AGENT_CONTAINER} ${KAFKA_CONTAINER} || true
