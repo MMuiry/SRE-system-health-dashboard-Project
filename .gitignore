@@ -21,3 +21,6 @@ venv/
 
 # Test output
 reports/
+
+#remembers previous tag
+.release/
