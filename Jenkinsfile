@@ -23,10 +23,11 @@ pipeline {
     agent any
 
     environment {
+        BRANCH_SAFE     = "${env.BRANCH_NAME.replaceAll('[^A-Za-z0-9]', '-').toLowerCase()}"
         IMAGE_NAME      = 'system-health-dashboard'
         AGENT_IMAGE     = 'system-agent'
-        IMAGE_TAG       = "1.0.${BUILD_NUMBER}"
-        CI_ID           = "${env.BRANCH_NAME.replaceAll('[^A-Za-z0-9]', '-').toLowerCase()}-${env.BUILD_NUMBER}"
+        IMAGE_TAG       = "${BRANCH_SAFE}-${BUILD_NUMBER}"
+        CI_ID           = "${BRANCH_SAFE}-${BUILD_NUMBER}"
         CONTAINER       = "shd-ci-${CI_ID}"
         AGENT_CONTAINER = "agent-ci-${CI_ID}"
         KAFKA_CONTAINER = "kafka-ci-${CI_ID}"
