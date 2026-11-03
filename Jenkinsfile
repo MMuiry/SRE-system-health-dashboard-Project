@@ -239,7 +239,7 @@ pipeline {
             }
             steps {
                 script {
-                    onServer("./scripts/smoke_test.sh 5001 ${env.IMAGE_TAG}")
+                    onServer("EXTRA_SMOKE_PATH=/does-not-exist ./scripts/smoke_test.sh 5001 ${env.IMAGE_TAG}")
                 }
             }
         }
