@@ -17,7 +17,8 @@ COPY --from=build /src/target/*.jar app.jar
 
 ARG APP_VERSION=1.0.0
 ENV APP_VERSION=${APP_VERSION}
-
+# will break it
+ENV MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=info
 USER appuser
 EXPOSE 8080
 
